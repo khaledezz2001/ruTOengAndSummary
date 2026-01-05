@@ -9,16 +9,25 @@ from pdf2image import convert_from_bytes
 from transformers import AutoTokenizer, AutoModelForCausalLM
 
 # ------------------------------------------------
-# LOAD MODELS (COLD START – VERY IMPORTANT)
+# GPU CHECK (VERY IMPORTANT)
+# ------------------------------------------------
+print("CUDA available:", torch.cuda.is_available())
+if torch.cuda.is_available():
+    print("GPU:", torch.cuda.get_device_name(0))
+else:
+    print("WARNING: GPU NOT AVAILABLE – RUNNING ON CPU")
+
+# ------------------------------------------------
+# LOAD MODELS (COLD START)
 # ------------------------------------------------
 
-# OCR model
+# OCR (CPU – this is fine)
 ocr = PaddleOCR(
     lang="ru",
     use_textline_orientation=True
 )
 
-# LLM model
+# LLM (GPU)
 MODEL_NAME = "Qwen/Qwen2.5-14B-Instruct"
 
 tokenizer = AutoTokenizer.from_pretrained(
@@ -28,8 +37,8 @@ tokenizer = AutoTokenizer.from_pretrained(
 
 model = AutoModelForCausalLM.from_pretrained(
     MODEL_NAME,
-    device_map="auto",
-    torch_dtype=torch.float16,
+    device_map="cuda",          # 🔥 FORCE GPU
+    torch_dtype=torch.float16,  # 🔥 FP16 for GPU
     trust_remote_code=True
 )
 
@@ -92,7 +101,7 @@ Russian:
 
 English:
 """
-        inputs = tokenizer(prompt, return_tensors="pt").to(model.device)
+        inputs = tokenizer(prompt, return_tensors="pt").to("cuda")
 
         with torch.no_grad():
             output = model.generate(
@@ -109,16 +118,42 @@ English:
 
 
 def summarize_text(text):
-    prompt = f"""
-Summarize the following document in clear, concise English.
-Focus on key points.
+    chunks = chunk_text(text, max_chars=2000)
+    partial_summaries = []
 
-Document:
-{text}
+    # First pass summaries
+    for chunk in chunks:
+        prompt = f"""
+Summarize the following text.
+
+Text:
+{chunk}
 
 Summary:
 """
-    inputs = tokenizer(prompt, return_tensors="pt").to(model.device)
+        inputs = tokenizer(prompt, return_tensors="pt").to("cuda")
+
+        with torch.no_grad():
+            output = model.generate(
+                **inputs,
+                max_new_tokens=200,
+                temperature=0.3,
+                do_sample=False
+            )
+
+        decoded = tokenizer.decode(output[0], skip_special_tokens=True)
+        partial_summaries.append(decoded.split("Summary:")[-1].strip())
+
+    # Final summary
+    final_prompt = f"""
+Create a concise overall summary from the following partial summaries.
+
+Summaries:
+{chr(10).join(partial_summaries)}
+
+Final Summary:
+"""
+    inputs = tokenizer(final_prompt, return_tensors="pt").to("cuda")
 
     with torch.no_grad():
         output = model.generate(
@@ -129,7 +164,7 @@ Summary:
         )
 
     decoded = tokenizer.decode(output[0], skip_special_tokens=True)
-    return decoded.split("Summary:")[-1].strip()
+    return decoded.split("Final Summary:")[-1].strip()
 
 # ------------------------------------------------
 # RUNPOD HANDLER
