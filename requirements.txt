@@ -1,11 +1,12 @@
 runpod
-paddleocr
-paddlepaddle
-opencv-python
 numpy
-pdf2image
+opencv-python
 pillow
-torch
+pdf2image
+
+paddleocr
+paddlepaddle==2.6.1
+
 transformers
 accelerate
 sentencepiece
