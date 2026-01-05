@@ -1,0 +1,11 @@
+runpod
+paddleocr
+paddlepaddle
+opencv-python
+numpy
+pdf2image
+pillow
+torch
+transformers
+accelerate
+sentencepiece
