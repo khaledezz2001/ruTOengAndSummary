@@ -1,12 +1,16 @@
-FROM runpod/serverless:python3.10
+FROM python:3.10-slim
 
 WORKDIR /app
 
-# System deps for PDF + OpenCV
+# System dependencies
 RUN apt-get update && apt-get install -y \
     poppler-utils \
     libgl1 \
+    git \
     && rm -rf /var/lib/apt/lists/*
+
+# Upgrade pip
+RUN pip install --upgrade pip
 
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
