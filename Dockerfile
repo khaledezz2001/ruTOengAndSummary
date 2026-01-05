@@ -1,7 +1,8 @@
-FROM runpod/pytorch:2.0.1-cuda11.8.0-runtime
+FROM runpod/pytorch:2.0.0-cuda11.8-runtime
 
 WORKDIR /app
 
+# Required for PDF + OpenCV
 RUN apt-get update && apt-get install -y \
     poppler-utils \
     libgl1 \
