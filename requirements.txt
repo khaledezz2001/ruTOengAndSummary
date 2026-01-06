@@ -1,5 +1,7 @@
+
+numpy<2.0
+
 runpod
-numpy
 opencv-python
 pillow
 pdf2image
@@ -7,6 +9,6 @@ pdf2image
 paddleocr
 paddlepaddle==2.6.2
 
-transformers
-accelerate
+transformers==4.41.2
+accelerate==0.30.1
 sentencepiece
