@@ -15,9 +15,6 @@ from transformers import (
     BitsAndBytesConfig
 )
 
-# =========================
-# ENV
-# =========================
 os.environ["HF_HOME"] = "/models/hf"
 os.environ["TRANSFORMERS_OFFLINE"] = "1"
 
@@ -40,7 +37,7 @@ def load_ocr():
             use_angle_cls=False,
             det=True,
             rec=True,
-            structure=False   # PURE OCR ONLY
+            structure=False
         )
         print("✅ PaddleOCR loaded")
     return ocr
@@ -101,22 +98,20 @@ def ocr_images(images):
     texts = []
 
     for img in images:
-        # ⚠️ DO NOT binarize / threshold
         gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
 
         result = engine.ocr(gray, cls=False)
-        if not result:
+        if not result or not result[0]:
             continue
 
-        for line in result:
-            if not line or len(line) < 2:
+        # ✅ IMPORTANT: iterate result[0]
+        for line in result[0]:
+            if len(line) < 2:
                 continue
 
-            content = line[1]
-
-            # Expected: (text, confidence)
-            if isinstance(content, tuple) and isinstance(content[0], str):
-                text = content[0].strip()
+            text, score = line[1]
+            if isinstance(text, str):
+                text = text.strip()
                 if text:
                     texts.append(text)
 
@@ -171,7 +166,6 @@ def handler(event):
     en_text = translate_ru_to_en(ru_text)
     summary = summarize_text(en_text)
 
-    # DEBUG (OPTIONAL)
     print("========== OCR RU TEXT ==========")
     print(ru_text[:2000])
     print("========== TRANSLATED EN TEXT ==========")
