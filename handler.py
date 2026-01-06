@@ -1,5 +1,5 @@
 # =========================================================
-# RunPod Serverless Handler (FINAL STABLE VERSION)
+# RunPod Serverless Handler (FINAL – PaddleOCR 3.x SAFE)
 # =========================================================
 
 print("🚀 Handler file imported")
@@ -30,11 +30,7 @@ def load_ocr():
     global ocr
     if ocr is None:
         print("🔤 Loading PaddleOCR (CPU)...")
-        ocr = PaddleOCR(
-            lang="ru",
-            use_textline_orientation=False,
-            show_log=False
-        )
+        ocr = PaddleOCR(lang="ru")
         print("✅ PaddleOCR loaded")
     return ocr
 
@@ -155,7 +151,6 @@ Summary:
 def handler(event):
     print("📥 Event received")
 
-    # Warmup
     if event.get("input", {}).get("warmup"):
         return {"status": "warm"}
 
@@ -163,26 +158,15 @@ def handler(event):
     if not pdf_base64:
         return {"error": "No PDF provided"}
 
-    # Decode PDF
     pdf_bytes = base64.b64decode(pdf_base64)
 
-    # PDF → Images
     images = pdf_to_images(pdf_bytes)
-
-    # OCR
     ru_text = "\n".join(ocr_images(images))
 
     if not ru_text.strip():
-        return {
-            "text_ru": "",
-            "text_en": "",
-            "summary": ""
-        }
+        return {"text_ru": "", "text_en": "", "summary": ""}
 
-    # Translate
     en_text = translate_ru_to_en(ru_text)
-
-    # Summarize
     summary = summarize_text(en_text)
 
     return {
@@ -192,7 +176,7 @@ def handler(event):
     }
 
 # =========================================================
-# REQUIRED ENTRYPOINT (MUST BE LAST LINE)
+# REQUIRED ENTRYPOINT (MUST BE LAST)
 # =========================================================
 print("✅ Starting RunPod serverless handler")
 runpod.serverless.start({"handler": handler})
