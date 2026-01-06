@@ -15,6 +15,9 @@ from transformers import (
     BitsAndBytesConfig
 )
 
+# =========================
+# ENV
+# =========================
 os.environ["HF_HOME"] = "/models/hf"
 os.environ["TRANSFORMERS_OFFLINE"] = "1"
 
@@ -26,7 +29,7 @@ model = None
 
 
 # =========================
-# OCR LOADING
+# OCR LOADER
 # =========================
 def load_ocr():
     global ocr
@@ -37,14 +40,14 @@ def load_ocr():
             use_angle_cls=False,
             det=True,
             rec=True,
-            structure=False  # ✅ PURE OCR MODE
+            structure=False   # PURE OCR ONLY
         )
         print("✅ PaddleOCR loaded")
     return ocr
 
 
 # =========================
-# LLM LOADING
+# LLM LOADER
 # =========================
 def load_llm():
     global tokenizer, model
@@ -91,22 +94,15 @@ def pdf_to_images(pdf_bytes):
 
 
 # =========================
-# OCR IMAGE PROCESSING (FIXED)
+# OCR IMAGES (FINAL FIX)
 # =========================
 def ocr_images(images):
     engine = load_ocr()
     texts = []
 
     for img in images:
+        # ⚠️ DO NOT binarize / threshold
         gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-        gray = cv2.adaptiveThreshold(
-            gray,
-            255,
-            cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
-            cv2.THRESH_BINARY,
-            31,
-            10
-        )
 
         result = engine.ocr(gray, cls=False)
         if not result:
@@ -118,7 +114,7 @@ def ocr_images(images):
 
             content = line[1]
 
-            # ✅ PaddleOCR normal output: (text, confidence)
+            # Expected: (text, confidence)
             if isinstance(content, tuple) and isinstance(content[0], str):
                 text = content[0].strip()
                 if text:
@@ -128,7 +124,7 @@ def ocr_images(images):
 
 
 # =========================
-# TRANSLATION
+# TRANSLATE
 # =========================
 def translate_ru_to_en(text):
     tokenizer, model = load_llm()
@@ -140,7 +136,7 @@ def translate_ru_to_en(text):
 
 
 # =========================
-# SUMMARIZATION
+# SUMMARIZE
 # =========================
 def summarize_text(text):
     tokenizer, model = load_llm()
@@ -152,7 +148,7 @@ def summarize_text(text):
 
 
 # =========================
-# RUNPOD HANDLER
+# HANDLER
 # =========================
 def handler(event):
     print("📥 Event received")
@@ -175,7 +171,7 @@ def handler(event):
     en_text = translate_ru_to_en(ru_text)
     summary = summarize_text(en_text)
 
-    # 🔍 DEBUG LOGS (OPTIONAL)
+    # DEBUG (OPTIONAL)
     print("========== OCR RU TEXT ==========")
     print(ru_text[:2000])
     print("========== TRANSLATED EN TEXT ==========")
