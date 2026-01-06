@@ -1,5 +1,6 @@
 # =========================================================
-# RunPod Serverless Handler (FINAL – PaddleOCR 3.x SAFE)
+# RunPod Serverless Handler
+# PaddleOCR 2.7 + Qwen 14B (80GB GPU)
 # =========================================================
 
 print("🚀 Handler file imported")
@@ -29,8 +30,13 @@ MODEL_NAME = "Qwen/Qwen2.5-14B-Instruct"
 def load_ocr():
     global ocr
     if ocr is None:
-        print("🔤 Loading PaddleOCR (CPU)...")
-        ocr = PaddleOCR(lang="ru")
+        print("🔤 Loading PaddleOCR (CPU, v2.7)...")
+        ocr = PaddleOCR(
+            lang="ru",
+            use_angle_cls=False,
+            det=True,
+            rec=True
+        )
         print("✅ PaddleOCR loaded")
     return ocr
 
@@ -72,9 +78,9 @@ def ocr_images(images):
     engine = load_ocr()
     texts = []
     for img in images:
-        result = engine.predict(img)
-        for page in result:
-            texts.extend(page["rec_texts"])
+        result = engine.ocr(img, cls=False)
+        for line in result:
+            texts.append(line[1][0])
     return texts
 
 
@@ -151,6 +157,7 @@ Summary:
 def handler(event):
     print("📥 Event received")
 
+    # Warmup
     if event.get("input", {}).get("warmup"):
         return {"status": "warm"}
 
@@ -160,13 +167,23 @@ def handler(event):
 
     pdf_bytes = base64.b64decode(pdf_base64)
 
+    # PDF → Images
     images = pdf_to_images(pdf_bytes)
+
+    # OCR
     ru_text = "\n".join(ocr_images(images))
 
     if not ru_text.strip():
-        return {"text_ru": "", "text_en": "", "summary": ""}
+        return {
+            "text_ru": "",
+            "text_en": "",
+            "summary": ""
+        }
 
+    # Translate
     en_text = translate_ru_to_en(ru_text)
+
+    # Summarize
     summary = summarize_text(en_text)
 
     return {
@@ -176,7 +193,7 @@ def handler(event):
     }
 
 # =========================================================
-# REQUIRED ENTRYPOINT (MUST BE LAST)
+# REQUIRED ENTRYPOINT (MUST BE LAST LINE)
 # =========================================================
 print("✅ Starting RunPod serverless handler")
 runpod.serverless.start({"handler": handler})
