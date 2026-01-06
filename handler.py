@@ -25,6 +25,9 @@ tokenizer = None
 model = None
 
 
+# =========================
+# OCR LOADING
+# =========================
 def load_ocr():
     global ocr
     if ocr is None:
@@ -34,12 +37,15 @@ def load_ocr():
             use_angle_cls=False,
             det=True,
             rec=True,
-            structure=False  # ✅ IMPORTANT FIX
+            structure=False  # ✅ PURE OCR MODE
         )
         print("✅ PaddleOCR loaded")
     return ocr
 
 
+# =========================
+# LLM LOADING
+# =========================
 def load_llm():
     global tokenizer, model
     if model is None:
@@ -71,6 +77,9 @@ def load_llm():
     return tokenizer, model
 
 
+# =========================
+# PDF → IMAGES
+# =========================
 def pdf_to_images(pdf_bytes):
     pages = convert_from_bytes(pdf_bytes, dpi=500)
     images = []
@@ -81,16 +90,12 @@ def pdf_to_images(pdf_bytes):
     return images
 
 
+# =========================
+# OCR IMAGE PROCESSING (FIXED)
+# =========================
 def ocr_images(images):
     engine = load_ocr()
     texts = []
-
-    def flatten(x):
-        if isinstance(x, str):
-            return x
-        if isinstance(x, list):
-            return " ".join(flatten(i) for i in x)
-        return str(x)
 
     for img in images:
         gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
@@ -108,16 +113,23 @@ def ocr_images(images):
             continue
 
         for line in result:
-            if not line or len(line) < 2 or not line[1]:
+            if not line or len(line) < 2:
                 continue
-            raw = line[1][0]
-            text = flatten(raw).strip()
-            if text:
-                texts.append(text)
+
+            content = line[1]
+
+            # ✅ PaddleOCR normal output: (text, confidence)
+            if isinstance(content, tuple) and isinstance(content[0], str):
+                text = content[0].strip()
+                if text:
+                    texts.append(text)
 
     return texts
 
 
+# =========================
+# TRANSLATION
+# =========================
 def translate_ru_to_en(text):
     tokenizer, model = load_llm()
     prompt = f"Translate the following Russian text to English:\n{text}\nEnglish:"
@@ -127,6 +139,9 @@ def translate_ru_to_en(text):
     return tokenizer.decode(out[0], skip_special_tokens=True).split("English:")[-1].strip()
 
 
+# =========================
+# SUMMARIZATION
+# =========================
 def summarize_text(text):
     tokenizer, model = load_llm()
     prompt = f"Summarize the following text:\n{text}\nSummary:"
@@ -136,6 +151,9 @@ def summarize_text(text):
     return tokenizer.decode(out[0], skip_special_tokens=True).split("Summary:")[-1].strip()
 
 
+# =========================
+# RUNPOD HANDLER
+# =========================
 def handler(event):
     print("📥 Event received")
 
@@ -157,7 +175,7 @@ def handler(event):
     en_text = translate_ru_to_en(ru_text)
     summary = summarize_text(en_text)
 
-    # 🔍 DEBUG OUTPUT (SAFE TO REMOVE LATER)
+    # 🔍 DEBUG LOGS (OPTIONAL)
     print("========== OCR RU TEXT ==========")
     print(ru_text[:2000])
     print("========== TRANSLATED EN TEXT ==========")
