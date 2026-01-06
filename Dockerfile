@@ -1,29 +1,17 @@
-FROM nvidia/cuda:11.8.0-runtime-ubuntu22.04
+FROM runpod/pytorch:2.1.0-cuda11.8.0-runtime
 
-ENV DEBIAN_FRONTEND=noninteractive
 WORKDIR /app
 
-# 🔥 FIX: add libglib2.0-0
+# ---- System dependencies for pdf2image ----
 RUN apt-get update && apt-get install -y \
-    python3.10 \
-    python3-pip \
     poppler-utils \
-    libgl1 \
-    libglib2.0-0 \
-    libgomp1 \
-    git \
     && rm -rf /var/lib/apt/lists/*
 
-RUN ln -s /usr/bin/python3 /usr/bin/python
-RUN pip install --upgrade pip
-
-# GPU PyTorch
-RUN pip install torch==2.1.0+cu118 torchvision==0.16.0+cu118 \
-    --index-url https://download.pytorch.org/whl/cu118
-
+# ---- Python dependencies ----
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
+# ---- App ----
 COPY handler.py .
 
 CMD ["python", "handler.py"]
