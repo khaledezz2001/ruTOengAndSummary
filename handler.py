@@ -139,4 +139,29 @@ def summarize(text):
 def handler(event):
     print("📥 Event received")
 
-    if event.get("input", {}).get("wa
+    if event.get("input", {}).get("warmup"):
+        return {"status": "warm"}
+
+    pdf_base64 = event.get("input", {}).get("pdf_base64")
+    if not pdf_base64:
+        return {"error": "No PDF provided"}
+
+    pdf_bytes = base64.b64decode(pdf_base64)
+
+    images = pdf_to_images(pdf_bytes)
+    ru_text = "\n".join(ocr_images(images))
+
+    if not ru_text.strip():
+        return {"error": "No text detected"}
+
+    en_text = translate_ru_to_en(ru_text)
+    summary = summarize(en_text)
+
+    return {
+        "text_ru": ru_text,
+        "text_en": en_text,
+        "summary": summary
+    }
+
+print("✅ Starting RunPod serverless handler")
+runpod.serverless.start({"handler": handler})
