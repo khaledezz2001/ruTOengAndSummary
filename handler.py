@@ -22,7 +22,7 @@ ocr = None
 tokenizer = None
 model = None
 
-MODEL_NAME = "Qwen/Qwen2.5-14B-Instruct"
+MODEL_NAME = "Qwen/Qwen2.5-7B-Instruct"
 
 # =========================================================
 # LAZY LOADERS
