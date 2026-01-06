@@ -1,11 +1,13 @@
 # =========================================================
 # RunPod Serverless Handler
-# FINAL WORKING VERSION
+# FINAL VERSION (PRELOADED MODELS)
 # =========================================================
 
 print("🚀 Handler file imported")
 
+import os
 import base64
+import time
 import cv2
 import numpy as np
 import torch
@@ -13,7 +15,17 @@ import runpod
 
 from pdf2image import convert_from_bytes
 from paddleocr import PaddleOCR
-from transformers import AutoTokenizer, AutoModelForCausalLM
+from transformers import (
+    AutoTokenizer,
+    AutoModelForCausalLM,
+    BitsAndBytesConfig
+)
+
+# =========================================================
+# ENV: force local model cache (preloaded in Docker)
+# =========================================================
+os.environ["HF_HOME"] = "/models/hf"
+os.environ["TRANSFORMERS_CACHE"] = "/models/hf"
 
 # =========================================================
 # GLOBALS (LAZY LOADED)
@@ -25,12 +37,12 @@ model = None
 MODEL_NAME = "Qwen/Qwen2.5-7B-Instruct"
 
 # =========================================================
-# LAZY LOADERS
+# LOAD OCR (PRELOADED)
 # =========================================================
 def load_ocr():
     global ocr
     if ocr is None:
-        print("🔤 Loading PaddleOCR (CPU, v2.7)...")
+        print("🔤 Loading PaddleOCR (preloaded, CPU)...")
         ocr = PaddleOCR(
             lang="ru",
             use_angle_cls=False,
@@ -40,32 +52,45 @@ def load_ocr():
         print("✅ PaddleOCR loaded")
     return ocr
 
-
+# =========================================================
+# LOAD LLM (PRELOADED, 4-BIT)
+# =========================================================
 def load_llm():
     global tokenizer, model
     if model is None:
-        print("🤖 Loading tokenizer...")
+        print("🤖 Loading tokenizer (local)...")
         tokenizer = AutoTokenizer.from_pretrained(
             MODEL_NAME,
-            trust_remote_code=True
+            trust_remote_code=True,
+            local_files_only=True
         )
 
-        print("🤖 Loading model on GPU (FP16)...")
+        print("🤖 Loading model on GPU (4-bit, local)...")
+
+        bnb_config = BitsAndBytesConfig(
+            load_in_4bit=True,
+            bnb_4bit_compute_dtype=torch.float16,
+            bnb_4bit_use_double_quant=True,
+            bnb_4bit_quant_type="nf4",
+        )
+
         model = AutoModelForCausalLM.from_pretrained(
             MODEL_NAME,
             device_map="cuda",
-            torch_dtype=torch.float16,
-            trust_remote_code=True
+            quantization_config=bnb_config,
+            trust_remote_code=True,
+            local_files_only=True
         )
+
         model.eval()
-        print("✅ Qwen model loaded")
+        print("✅ Qwen 7B (4-bit) loaded")
+
     return tokenizer, model
 
 # =========================================================
-# UTILS
+# PDF → IMAGES
 # =========================================================
 def pdf_to_images(pdf_bytes):
-    # High DPI for small text PDFs
     pages = convert_from_bytes(pdf_bytes, dpi=500)
     images = []
     for page in pages:
@@ -74,12 +99,15 @@ def pdf_to_images(pdf_bytes):
         images.append(img)
     return images
 
-
+# =========================================================
+# OCR IMAGES (SAFE + ROBUST)
+# =========================================================
 def ocr_images(images):
     engine = load_ocr()
     texts = []
 
     for img in images:
+        # Preprocess for better OCR
         gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
         gray = cv2.adaptiveThreshold(
             gray,
@@ -100,7 +128,7 @@ def ocr_images(images):
 
             raw_text = line[1][0]
 
-            # 🔥 FIX: ensure text is a string
+            # Normalize to string
             if isinstance(raw_text, list):
                 raw_text = " ".join(map(str, raw_text))
             else:
@@ -112,7 +140,9 @@ def ocr_images(images):
 
     return texts
 
-
+# =========================================================
+# TEXT HELPERS
+# =========================================================
 def chunk_text(text, max_chars=1200):
     chunks, current = [], ""
     for line in text.split("\n"):
@@ -125,7 +155,9 @@ def chunk_text(text, max_chars=1200):
         chunks.append(current)
     return chunks
 
-
+# =========================================================
+# TRANSLATE RU → EN
+# =========================================================
 def translate_ru_to_en(text):
     tokenizer, model = load_llm()
     chunks = chunk_text(text)
@@ -155,9 +187,12 @@ English:
 
     return "\n".join(outputs)
 
-
+# =========================================================
+# SUMMARIZE
+# =========================================================
 def summarize_text(text):
     tokenizer, model = load_llm()
+
     prompt = f"""
 Summarize the following text.
 
@@ -195,16 +230,16 @@ def handler(event):
 
     pdf_bytes = base64.b64decode(pdf_base64)
 
+    # OCR pipeline (image-based PDFs only)
     images = pdf_to_images(pdf_bytes)
     ru_text = "\n".join(ocr_images(images))
 
     if not ru_text.strip():
         return {
-            "text_ru": "",
-            "text_en": "",
-            "summary": ""
+            "error": "No text detected. Please provide an image-based (scanned) PDF."
         }
 
+    # LLM steps
     en_text = translate_ru_to_en(ru_text)
     summary = summarize_text(en_text)
 
