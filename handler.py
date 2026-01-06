@@ -1,6 +1,6 @@
 # =========================================================
 # RunPod Serverless Handler
-# FINAL VERSION – OCR FIXED (DPI + PREPROCESSING)
+# FINAL WORKING VERSION
 # =========================================================
 
 print("🚀 Handler file imported")
@@ -65,7 +65,7 @@ def load_llm():
 # UTILS
 # =========================================================
 def pdf_to_images(pdf_bytes):
-    # 🔥 Higher DPI = better OCR for small text PDFs
+    # High DPI for small text PDFs
     pages = convert_from_bytes(pdf_bytes, dpi=500)
     images = []
     for page in pages:
@@ -80,9 +80,8 @@ def ocr_images(images):
     texts = []
 
     for img in images:
-        # ---- PREPROCESSING (CRITICAL) ----
+        # ---- PREPROCESSING ----
         gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-
         gray = cv2.adaptiveThreshold(
             gray,
             255,
@@ -93,24 +92,122 @@ def ocr_images(images):
         )
 
         result = engine.ocr(gray, cls=False)
-
         if result is None:
             continue
 
         for line in result:
-            if line is None:
+            if not line or len(line) < 2 or not line[1]:
                 continue
-            if not isinstance(line, (list, tuple)):
-                continue
-            if len(line) < 2:
-                continue
-            if line[1] is None:
-                continue
-            if not isinstance(line[1], (list, tuple)):
-                continue
-            if len(line[1]) < 1:
-                continue
-
             text = line[1][0]
-            if text and isinstance(text, str):
-                texts.append(
+            if text:
+                texts.append(text)
+
+    return texts
+
+
+def chunk_text(text, max_chars=1200):
+    chunks, current = [], ""
+    for line in text.split("\n"):
+        if len(current) + len(line) < max_chars:
+            current += line + "\n"
+        else:
+            chunks.append(current)
+            current = line + "\n"
+    if current:
+        chunks.append(current)
+    return chunks
+
+
+def translate_ru_to_en(text):
+    tokenizer, model = load_llm()
+    chunks = chunk_text(text)
+    outputs = []
+
+    for chunk in chunks:
+        prompt = f"""
+Translate the following Russian text to English.
+
+Russian:
+{chunk}
+
+English:
+"""
+        inputs = tokenizer(prompt, return_tensors="pt").to("cuda")
+
+        with torch.no_grad():
+            out = model.generate(
+                **inputs,
+                max_new_tokens=400,
+                do_sample=False,
+                temperature=0.2
+            )
+
+        decoded = tokenizer.decode(out[0], skip_special_tokens=True)
+        outputs.append(decoded.split("English:")[-1].strip())
+
+    return "\n".join(outputs)
+
+
+def summarize_text(text):
+    tokenizer, model = load_llm()
+    prompt = f"""
+Summarize the following text.
+
+Text:
+{text}
+
+Summary:
+"""
+    inputs = tokenizer(prompt, return_tensors="pt").to("cuda")
+
+    with torch.no_grad():
+        out = model.generate(
+            **inputs,
+            max_new_tokens=300,
+            do_sample=False,
+            temperature=0.3
+        )
+
+    decoded = tokenizer.decode(out[0], skip_special_tokens=True)
+    return decoded.split("Summary:")[-1].strip()
+
+# =========================================================
+# RUNPOD HANDLER
+# =========================================================
+def handler(event):
+    print("📥 Event received")
+
+    # Warmup
+    if event.get("input", {}).get("warmup"):
+        return {"status": "warm"}
+
+    pdf_base64 = event.get("input", {}).get("pdf_base64")
+    if not pdf_base64:
+        return {"error": "No PDF provided"}
+
+    pdf_bytes = base64.b64decode(pdf_base64)
+
+    images = pdf_to_images(pdf_bytes)
+    ru_text = "\n".join(ocr_images(images))
+
+    if not ru_text.strip():
+        return {
+            "text_ru": "",
+            "text_en": "",
+            "summary": ""
+        }
+
+    en_text = translate_ru_to_en(ru_text)
+    summary = summarize_text(en_text)
+
+    return {
+        "text_ru": ru_text,
+        "text_en": en_text,
+        "summary": summary
+    }
+
+# =========================================================
+# REQUIRED ENTRYPOINT
+# =========================================================
+print("✅ Starting RunPod serverless handler")
+runpod.serverless.start({"handler": handler})
