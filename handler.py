@@ -80,7 +80,6 @@ def ocr_images(images):
     texts = []
 
     for img in images:
-        # ---- PREPROCESSING ----
         gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
         gray = cv2.adaptiveThreshold(
             gray,
@@ -92,15 +91,24 @@ def ocr_images(images):
         )
 
         result = engine.ocr(gray, cls=False)
-        if result is None:
+        if not result:
             continue
 
         for line in result:
             if not line or len(line) < 2 or not line[1]:
                 continue
-            text = line[1][0]
-            if text:
-                texts.append(text)
+
+            raw_text = line[1][0]
+
+            # 🔥 FIX: ensure text is a string
+            if isinstance(raw_text, list):
+                raw_text = " ".join(map(str, raw_text))
+            else:
+                raw_text = str(raw_text)
+
+            raw_text = raw_text.strip()
+            if raw_text:
+                texts.append(raw_text)
 
     return texts
 
