@@ -92,10 +92,12 @@ def ocr_images(images):
     for img in images:
         gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
         gray = cv2.adaptiveThreshold(
-            gray, 255,
+            gray,
+            255,
             cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
             cv2.THRESH_BINARY,
-            31, 10
+            31,
+            10
         )
 
         result = engine.ocr(gray, cls=False)
@@ -103,12 +105,20 @@ def ocr_images(images):
             continue
 
         for line in result:
-            if not line or not line[1]:
+            if not line or len(line) < 2 or not line[1]:
                 continue
-            text = line[1][0]
-            if isinstance(text, list):
-                text = " ".join(text)
-            text = str(text).strip()
+
+            raw = line[1][0]
+
+            # 🔥 FLATTEN ANY SHAPE TO STRING
+            def flatten(x):
+                if isinstance(x, str):
+                    return x
+                if isinstance(x, list):
+                    return " ".join(flatten(i) for i in x)
+                return str(x)
+
+            text = flatten(raw).strip()
             if text:
                 texts.append(text)
 
