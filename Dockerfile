@@ -1,9 +1,9 @@
-FROM runpod/pytorch:2.1.0-cuda11.8.0-runtime
+FROM runpod/pytorch:cuda11.8-runtime
 
 ENV DEBIAN_FRONTEND=noninteractive
 WORKDIR /app
 
-# ---- System dependencies (ONLY what we need) ----
+# ---- System dependencies ----
 RUN apt-get update && apt-get install -y \
     poppler-utils \
     libgl1 \
@@ -12,9 +12,9 @@ RUN apt-get update && apt-get install -y \
     git \
     && rm -rf /var/lib/apt/lists/*
 
-# ---- Python deps ----
 RUN pip install --upgrade pip
 
+# ---- Python dependencies ----
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
