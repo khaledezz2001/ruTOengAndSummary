@@ -1,6 +1,6 @@
 # =========================================================
 # RunPod Serverless Handler
-# PaddleOCR 2.7 + Qwen 14B (80GB GPU)
+# FINAL STABLE VERSION
 # =========================================================
 
 print("🚀 Handler file imported")
@@ -77,10 +77,31 @@ def pdf_to_images(pdf_bytes):
 def ocr_images(images):
     engine = load_ocr()
     texts = []
+
     for img in images:
         result = engine.ocr(img, cls=False)
+
+        if result is None:
+            continue
+
         for line in result:
-            texts.append(line[1][0])
+            if line is None:
+                continue
+            if not isinstance(line, (list, tuple)):
+                continue
+            if len(line) < 2:
+                continue
+            if line[1] is None:
+                continue
+            if not isinstance(line[1], (list, tuple)):
+                continue
+            if len(line[1]) < 1:
+                continue
+
+            text = line[1][0]
+            if text and isinstance(text, str):
+                texts.append(text)
+
     return texts
 
 
