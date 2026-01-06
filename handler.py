@@ -1,3 +1,7 @@
+# =========================================================
+# RunPod Serverless Handler (FINAL, OFFLINE, STABLE)
+# =========================================================
+
 print("🚀 Handler file imported")
 
 import os
@@ -15,42 +19,54 @@ from transformers import (
     BitsAndBytesConfig
 )
 
-# -------------------------------------------------
-# ENV
-# -------------------------------------------------
+# ---------------------------------------------------------
+# ENV: offline mode
+# ---------------------------------------------------------
 os.environ["HF_HOME"] = "/models/hf"
+os.environ["TRANSFORMERS_OFFLINE"] = "1"
 
-MODEL_NAME = "Qwen/Qwen2.5-7B-Instruct"
+# ---------------------------------------------------------
+# LOCAL MODEL PATH (PRE-DOWNLOADED IN DOCKER)
+# ---------------------------------------------------------
+MODEL_DIR = "/models/hf/models--Qwen--Qwen2.5-7B-Instruct"
 
+# ---------------------------------------------------------
+# GLOBALS
+# ---------------------------------------------------------
 ocr = None
 tokenizer = None
 model = None
 
-# -------------------------------------------------
-# OCR
-# -------------------------------------------------
+# ---------------------------------------------------------
+# LOAD OCR (PRE-DOWNLOADED)
+# ---------------------------------------------------------
 def load_ocr():
     global ocr
     if ocr is None:
         print("🔤 Loading PaddleOCR...")
-        ocr = PaddleOCR(lang="ru", use_angle_cls=False)
+        ocr = PaddleOCR(
+            lang="ru",
+            use_angle_cls=False,
+            det=True,
+            rec=True
+        )
         print("✅ PaddleOCR loaded")
     return ocr
 
-# -------------------------------------------------
-# LLM (4-bit, GPU, LOCAL FILES ONLY)
-# -------------------------------------------------
+# ---------------------------------------------------------
+# LOAD LLM (4-BIT, GPU, LOCAL FILES ONLY)
+# ---------------------------------------------------------
 def load_llm():
     global tokenizer, model
     if model is None:
-        print("🤖 Loading tokenizer...")
+        print("🤖 Loading tokenizer (local path)...")
         tokenizer = AutoTokenizer.from_pretrained(
-            MODEL_NAME,
+            MODEL_DIR,
             trust_remote_code=True,
             local_files_only=True
         )
 
-        print("🤖 Loading model on GPU (4-bit)...")
+        print("🤖 Loading model on GPU (4-bit, local path)...")
         bnb_config = BitsAndBytesConfig(
             load_in_4bit=True,
             bnb_4bit_compute_dtype=torch.float16,
@@ -59,32 +75,33 @@ def load_llm():
         )
 
         model = AutoModelForCausalLM.from_pretrained(
-            MODEL_NAME,
+            MODEL_DIR,
             device_map="cuda",
             quantization_config=bnb_config,
             trust_remote_code=True,
             local_files_only=True
         )
+
         model.eval()
-        print("✅ Qwen 7B loaded")
+        print("✅ Qwen 7B loaded from disk")
 
     return tokenizer, model
 
-# -------------------------------------------------
+# ---------------------------------------------------------
 # PDF → IMAGES
-# -------------------------------------------------
+# ---------------------------------------------------------
 def pdf_to_images(pdf_bytes):
     pages = convert_from_bytes(pdf_bytes, dpi=500)
     images = []
-    for p in pages:
-        img = np.array(p)
+    for page in pages:
+        img = np.array(page)
         img = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
         images.append(img)
     return images
 
-# -------------------------------------------------
-# OCR IMAGES
-# -------------------------------------------------
+# ---------------------------------------------------------
+# OCR IMAGES (YOUR FUNCTION – CORRECT)
+# ---------------------------------------------------------
 def ocr_images(images):
     engine = load_ocr()
     texts = []
@@ -124,31 +141,69 @@ def ocr_images(images):
 
     return texts
 
-# -------------------------------------------------
-# LLM TASKS
-# -------------------------------------------------
+# ---------------------------------------------------------
+# TRANSLATE RU → EN
+# ---------------------------------------------------------
 def translate_ru_to_en(text):
     tokenizer, model = load_llm()
-    prompt = f"Translate the following Russian text to English:\n{text}\nEnglish:"
-    inputs = tokenizer(prompt, return_tensors="pt").to("cuda")
-    with torch.no_grad():
-        out = model.generate(**inputs, max_new_tokens=512)
-    return tokenizer.decode(out[0], skip_special_tokens=True).split("English:")[-1].strip()
 
-def summarize(text):
+    prompt = f"""
+Translate the following Russian text to English.
+
+Russian:
+{text}
+
+English:
+"""
+
+    inputs = tokenizer(prompt, return_tensors="pt").to("cuda")
+
+    with torch.no_grad():
+        out = model.generate(
+            **inputs,
+            max_new_tokens=512,
+            do_sample=False,
+            temperature=0.2
+        )
+
+    decoded = tokenizer.decode(out[0], skip_special_tokens=True)
+    return decoded.split("English:")[-1].strip()
+
+# ---------------------------------------------------------
+# SUMMARIZE
+# ---------------------------------------------------------
+def summarize_text(text):
     tokenizer, model = load_llm()
-    prompt = f"Summarize the following text:\n{text}\nSummary:"
-    inputs = tokenizer(prompt, return_tensors="pt").to("cuda")
-    with torch.no_grad():
-        out = model.generate(**inputs, max_new_tokens=256)
-    return tokenizer.decode(out[0], skip_special_tokens=True).split("Summary:")[-1].strip()
 
-# -------------------------------------------------
+    prompt = f"""
+Summarize the following text.
+
+Text:
+{text}
+
+Summary:
+"""
+
+    inputs = tokenizer(prompt, return_tensors="pt").to("cuda")
+
+    with torch.no_grad():
+        out = model.generate(
+            **inputs,
+            max_new_tokens=256,
+            do_sample=False,
+            temperature=0.3
+        )
+
+    decoded = tokenizer.decode(out[0], skip_special_tokens=True)
+    return decoded.split("Summary:")[-1].strip()
+
+# ---------------------------------------------------------
 # RUNPOD HANDLER
-# -------------------------------------------------
+# ---------------------------------------------------------
 def handler(event):
     print("📥 Event received")
 
+    # Warmup
     if event.get("input", {}).get("warmup"):
         return {"status": "warm"}
 
@@ -162,10 +217,12 @@ def handler(event):
     ru_text = "\n".join(ocr_images(images))
 
     if not ru_text.strip():
-        return {"error": "No text detected"}
+        return {
+            "error": "No text detected. Please provide a scanned (image-based) PDF."
+        }
 
     en_text = translate_ru_to_en(ru_text)
-    summary = summarize(en_text)
+    summary = summarize_text(en_text)
 
     return {
         "text_ru": ru_text,
@@ -173,5 +230,8 @@ def handler(event):
         "summary": summary
     }
 
+# ---------------------------------------------------------
+# ENTRYPOINT (REQUIRED)
+# ---------------------------------------------------------
 print("✅ Starting RunPod serverless handler")
 runpod.serverless.start({"handler": handler})
