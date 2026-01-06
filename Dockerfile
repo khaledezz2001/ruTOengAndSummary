@@ -4,7 +4,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 WORKDIR /app
 
 # -------------------------------------------------
-# System dependencies
+# System deps
 # -------------------------------------------------
 RUN apt-get update && apt-get install -y \
     python3.10 \
@@ -21,7 +21,7 @@ RUN ln -s /usr/bin/python3 /usr/bin/python
 RUN pip install --upgrade pip
 
 # -------------------------------------------------
-# Python dependencies
+# Python deps
 # -------------------------------------------------
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
@@ -32,41 +32,27 @@ RUN pip install --no-cache-dir -r requirements.txt
 RUN python - <<'EOF'
 from paddleocr import PaddleOCR
 print("Pre-downloading PaddleOCR models...")
-ocr = PaddleOCR(lang="ru", use_angle_cls=False)
+PaddleOCR(lang="ru", use_angle_cls=False)
 print("PaddleOCR models downloaded")
 EOF
 
 # -------------------------------------------------
-# 🔥 PRE-DOWNLOAD QWEN 7B (4-BIT)
+# 🔥 PRE-DOWNLOAD QWEN FILES (NO LOADING, NO CUDA)
 # -------------------------------------------------
 ENV HF_HOME=/models/hf
-ENV TRANSFORMERS_CACHE=/models/hf
 
 RUN python - <<'EOF'
-import torch
-from transformers import AutoTokenizer, AutoModelForCausalLM, BitsAndBytesConfig
+from huggingface_hub import snapshot_download
 
 MODEL_NAME = "Qwen/Qwen2.5-7B-Instruct"
 
-print("Downloading tokenizer...")
-AutoTokenizer.from_pretrained(MODEL_NAME, trust_remote_code=True)
-
-print("Downloading model (4-bit)...")
-bnb_config = BitsAndBytesConfig(
-    load_in_4bit=True,
-    bnb_4bit_compute_dtype=torch.float16,
-    bnb_4bit_use_double_quant=True,
-    bnb_4bit_quant_type="nf4",
+print("Downloading Qwen model files only...")
+snapshot_download(
+    repo_id=MODEL_NAME,
+    local_dir="/models/hf/models--Qwen--Qwen2.5-7B-Instruct",
+    local_dir_use_symlinks=False
 )
-
-AutoModelForCausalLM.from_pretrained(
-    MODEL_NAME,
-    quantization_config=bnb_config,
-    device_map="cpu",  # 🔥 IMPORTANT: CPU during build
-    trust_remote_code=True
-)
-
-print("Qwen model downloaded")
+print("Qwen files downloaded")
 EOF
 
 # -------------------------------------------------
