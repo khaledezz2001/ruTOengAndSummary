@@ -1,3 +1,7 @@
+# =========================================================
+# RunPod Serverless Handler (FINAL STABLE VERSION)
+# =========================================================
+
 print("🚀 Handler file imported")
 
 import base64
@@ -10,27 +14,25 @@ from pdf2image import convert_from_bytes
 from paddleocr import PaddleOCR
 from transformers import AutoTokenizer, AutoModelForCausalLM
 
-# ------------------------------------------------
+# =========================================================
 # GLOBALS (LAZY LOADED)
-# ------------------------------------------------
+# =========================================================
 ocr = None
 tokenizer = None
 model = None
 
 MODEL_NAME = "Qwen/Qwen2.5-14B-Instruct"
 
-# ------------------------------------------------
+# =========================================================
 # LAZY LOADERS
-# ------------------------------------------------
+# =========================================================
 def load_ocr():
     global ocr
     if ocr is None:
         print("🔤 Loading PaddleOCR (CPU)...")
         ocr = PaddleOCR(
             lang="ru",
-            use_angle_cls=False,
-            det=True,
-            rec=True,
+            use_textline_orientation=False,
             show_log=False
         )
         print("✅ PaddleOCR loaded")
@@ -46,7 +48,7 @@ def load_llm():
             trust_remote_code=True
         )
 
-        print("🤖 Loading model on GPU...")
+        print("🤖 Loading model on GPU (FP16)...")
         model = AutoModelForCausalLM.from_pretrained(
             MODEL_NAME,
             device_map="cuda",
@@ -57,9 +59,9 @@ def load_llm():
         print("✅ Qwen model loaded")
     return tokenizer, model
 
-# ------------------------------------------------
+# =========================================================
 # UTILS
-# ------------------------------------------------
+# =========================================================
 def pdf_to_images(pdf_bytes):
     pages = convert_from_bytes(pdf_bytes, dpi=300)
     images = []
@@ -99,7 +101,14 @@ def translate_ru_to_en(text):
     outputs = []
 
     for chunk in chunks:
-        prompt = f"Translate the following Russian text to English:\n{chunk}\nEnglish:"
+        prompt = f"""
+Translate the following Russian text to English.
+
+Russian:
+{chunk}
+
+English:
+"""
         inputs = tokenizer(prompt, return_tensors="pt").to("cuda")
 
         with torch.no_grad():
@@ -118,7 +127,15 @@ def translate_ru_to_en(text):
 
 def summarize_text(text):
     tokenizer, model = load_llm()
-    prompt = f"Summarize the following text:\n{text}\nSummary:"
+
+    prompt = f"""
+Summarize the following text.
+
+Text:
+{text}
+
+Summary:
+"""
     inputs = tokenizer(prompt, return_tensors="pt").to("cuda")
 
     with torch.no_grad():
@@ -132,12 +149,13 @@ def summarize_text(text):
     decoded = tokenizer.decode(out[0], skip_special_tokens=True)
     return decoded.split("Summary:")[-1].strip()
 
-# ------------------------------------------------
+# =========================================================
 # RUNPOD HANDLER
-# ------------------------------------------------
+# =========================================================
 def handler(event):
     print("📥 Event received")
 
+    # Warmup
     if event.get("input", {}).get("warmup"):
         return {"status": "warm"}
 
@@ -145,15 +163,26 @@ def handler(event):
     if not pdf_base64:
         return {"error": "No PDF provided"}
 
+    # Decode PDF
     pdf_bytes = base64.b64decode(pdf_base64)
 
+    # PDF → Images
     images = pdf_to_images(pdf_bytes)
+
+    # OCR
     ru_text = "\n".join(ocr_images(images))
 
     if not ru_text.strip():
-        return {"text_ru": "", "text_en": "", "summary": ""}
+        return {
+            "text_ru": "",
+            "text_en": "",
+            "summary": ""
+        }
 
+    # Translate
     en_text = translate_ru_to_en(ru_text)
+
+    # Summarize
     summary = summarize_text(en_text)
 
     return {
@@ -162,8 +191,8 @@ def handler(event):
         "summary": summary
     }
 
-# ------------------------------------------------
-# REQUIRED ENTRYPOINT (MUST BE LAST)
-# ------------------------------------------------
+# =========================================================
+# REQUIRED ENTRYPOINT (MUST BE LAST LINE)
+# =========================================================
 print("✅ Starting RunPod serverless handler")
 runpod.serverless.start({"handler": handler})
