@@ -1,15 +1,13 @@
-# Core
-numpy<2.0
 runpod
+numpy<2.0
 opencv-python
 pillow
 pdf2image
 
-# OCR (STABLE – NO PADDLEX)
 paddleocr==2.7.0.3
 paddlepaddle==2.6.2
 
-# LLM
 transformers==4.41.2
 accelerate==0.30.1
 sentencepiece
+bitsandbytes
