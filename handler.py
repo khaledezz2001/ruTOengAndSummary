@@ -203,7 +203,6 @@ Summary:
 def handler(event):
     print("📥 Event received")
 
-    # Warmup
     if event.get("input", {}).get("warmup"):
         return {"status": "warm"}
 
@@ -217,18 +216,26 @@ def handler(event):
     ru_text = "\n".join(ocr_images(images))
 
     if not ru_text.strip():
-        return {
-            "error": "No text detected. Please provide a scanned (image-based) PDF."
-        }
+        return {"error": "No text detected"}
 
     en_text = translate_ru_to_en(ru_text)
     summary = summarize_text(en_text)
+
+    # 🔍 DEBUG LOGS (THIS IS THE IMPORTANT PART)
+    print("========== OCR RU TEXT ==========")
+    print(ru_text[:2000])
+    print("========== TRANSLATED EN TEXT ==========")
+    print(en_text[:2000])
+    print("========== SUMMARY ==========")
+    print(summary)
+    print("========== END OUTPUT ==========")
 
     return {
         "text_ru": ru_text,
         "text_en": en_text,
         "summary": summary
     }
+
 
 # ---------------------------------------------------------
 # ENTRYPOINT (REQUIRED)
