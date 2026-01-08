@@ -3,6 +3,9 @@ FROM runpod/pytorch:2.1.0-py310-cuda118
 ENV DEBIAN_FRONTEND=noninteractive
 WORKDIR /app
 
+# -----------------------------
+# System deps
+# -----------------------------
 RUN apt-get update && apt-get install -y \
     libgl1 \
     libglib2.0-0 \
@@ -10,9 +13,15 @@ RUN apt-get update && apt-get install -y \
     ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
+# -----------------------------
+# Python deps
+# -----------------------------
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
+# -----------------------------
+# Pre-download GOT-OCR model
+# -----------------------------
 ENV HF_HOME=/models/hf
 
 RUN python - <<'EOF'
@@ -26,8 +35,12 @@ AutoModelForVision2Seq.from_pretrained(
     MODEL_ID,
     torch_dtype=torch.float16
 )
+print("GOT-OCR2_0 downloaded")
 EOF
 
+# -----------------------------
+# App
+# -----------------------------
 COPY handler.py .
 
 CMD ["python", "-u", "handler.py"]
